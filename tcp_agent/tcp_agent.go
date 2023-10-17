@@ -53,9 +53,11 @@ func NewTcpAgent(tcpConf *TcpConfig, encoder EncoderFunc, decoder DecoderFunc,
 	if tcpConf.ConnCount <= 0 || (tcpConf.Mode != common.AGENT_MODE_SERVER && tcpConf.Mode != common.AGENT_MODE_CLIENT) {
 		return nil, common.GetError(common.ERROR_INVALID_PARAMS)
 	}
+
 	if encoder == nil {
 		encoder = DefaultTcpEncoder
 	}
+
 	if decoder == nil {
 		decoder = DefaultTcpDecoder
 	}
@@ -66,6 +68,13 @@ func NewTcpAgent(tcpConf *TcpConfig, encoder EncoderFunc, decoder DecoderFunc,
 
 	if getErrorf == nil {
 		getErrorf = common.GetErrorf
+	}
+
+	if tcpConf.RecvBufferLen == 0 {
+		tcpConf.RecvBufferLen = TCP_DEFAULT_RECV_BUFFER_LEN
+	}
+	if tcpConf.RecvBufferLen < TCP_MIN_RECV_BUFFER_LEN {
+		tcpConf.RecvBufferLen = TCP_MIN_RECV_BUFFER_LEN
 	}
 
 	agent := TcpAgent{
@@ -278,7 +287,7 @@ func (agent *TcpAgent) receiver(ctx context.Context, connInfo *ConnInfo) {
 		log.Printf("receiver done, connId: %v, conninfo: %v", connInfo.id, getConnInfo(conn))
 	}()
 
-	recvBuffer := make([]byte, TCP_RECV_BUFFER_LEN)
+	recvBuffer := make([]byte, agent.conf.RecvBufferLen)
 	currentLen := 0
 	for {
 		n, err := conn.Read(recvBuffer[currentLen:])
