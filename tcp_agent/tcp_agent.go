@@ -20,7 +20,6 @@ type ConnInfo struct {
 
 type TcpAgent struct {
 	recvChan chan *base.RecvNetData
-	connChan chan bool
 
 	connMu         sync.Mutex
 	curConnCount   int
@@ -28,6 +27,8 @@ type TcpAgent struct {
 	conns          map[int]*ConnInfo // connId to connInfo
 	nextConnId     int
 	lastSendConnId int
+
+	listener net.Listener
 
 	encoder EncoderFunc
 	decoder DecoderFunc
@@ -69,7 +70,6 @@ func NewTcpAgent(tcpConf *TcpConfig, encoder EncoderFunc, decoder DecoderFunc,
 
 	agent := TcpAgent{
 		recvChan:       make(chan *base.RecvNetData, 64),
-		connChan:       make(chan bool, tcpConf.ConnCount*2),
 		maxConnCount:   tcpConf.ConnCount,
 		curConnCount:   0,
 		conf:           *tcpConf,
@@ -109,9 +109,10 @@ func (agent *TcpAgent) Start() error {
 			infof("TcpAgent|Start|Listen|ERROR|err=%v", err)
 			return err
 		}
-		go agent.listener(listener)
+		agent.listener = listener
+		go agent.listenProcess()
 	} else if agent.mode == common.AGENT_MODE_CLIENT {
-		go agent.connecter()
+		go agent.connectProcess()
 	}
 
 	infof("tcp agent started")
@@ -125,51 +126,50 @@ func (agent *TcpAgent) resetRunningStat() {
 	}
 }
 
-func (agent *TcpAgent) connecter() error {
+func (agent *TcpAgent) connectProcess() error {
 	ctx := context.Background()
 	infof, errorf := agent.getInfof(ctx), agent.getErrorf(ctx)
 	for {
 		if agent.curConnCount < agent.maxConnCount {
 			conn, err := net.Dial("tcp", fmt.Sprintf("%s:%v", agent.conf.Addr, agent.conf.Port))
 			if err != nil {
-				errorf("TcpAgent|connecter|ERROR|Dial failed, err=%v", err)
+				errorf("TcpAgent|connectProcess|ERROR|Dial failed, err=%v", err)
 			} else {
 				connInfo := agent.addConn(conn)
-				infof("TcpAgent|connecter|Connection established with server, connid: %v, conninfo: %v", connInfo.id, getConnInfo(conn))
+				infof("TcpAgent|connectProcess|Connection established with server, connid: %v, conninfo: %v", connInfo.id, getConnInfo(conn))
 				go agent.receiver(ctx, connInfo)
 			}
 		}
-		// wait 100ms or need conn
+		// wait 10ms or need conn
 		select {
-		case <-time.After(time.Millisecond * 100):
-		case <-agent.connChan:
+		case <-time.After(time.Millisecond * 10):
 		case <-agent.runningCtx.Done():
 			return nil
 		}
 	}
 }
 
-func (agent *TcpAgent) listener(listener net.Listener) error {
+func (agent *TcpAgent) listenProcess() error {
 	ctx := context.Background()
 	infof := agent.getInfof(ctx)
 
-	infof("begin listener, addr: %+v", listener.Addr())
+	infof("begin listenProcess, addr: %+v", agent.listener.Addr())
 
 	for {
 		if agent.curConnCount < agent.maxConnCount {
-			conn, err := listener.Accept()
+			conn, err := agent.listener.Accept()
 			if err != nil {
-				infof("TcpAgent|listener|Accept|ERROR|err=%v", err)
+				infof("TcpAgent|listenProcess|Accept|ERROR|err=%v", err)
+				return err
 			} else {
-				infof("TcpAgent|listener|tcp connection Accept, %v", getConnInfo(conn))
+				infof("TcpAgent|listenProcess|tcp connection Accept, %v", getConnInfo(conn))
 
 				connInfo := agent.addConn(conn)
 				go agent.receiver(ctx, connInfo)
 			}
 		}
 		select {
-		case <-time.After(time.Millisecond * 100):
-		case <-agent.connChan:
+		case <-time.After(time.Millisecond * 10):
 		case <-agent.runningCtx.Done():
 			return nil
 		}
@@ -210,10 +210,7 @@ func (agent *TcpAgent) delConn(connId int) bool {
 func (agent *TcpAgent) close1Conn(ctx context.Context, connInfo *ConnInfo) {
 	agent.getInfof(ctx)("close conn, connid: %v, conninfo: %v", connInfo.id, getConnInfo(connInfo.conn))
 
-	deleted := agent.delConn(connInfo.id)
-	if deleted {
-		agent.connChan <- true
-	}
+	agent.delConn(connInfo.id)
 	connInfo.conn.Close()
 }
 
@@ -227,13 +224,12 @@ func (agent *TcpAgent) closeAllConn(ctx context.Context) {
 		return
 	}
 
-	for connId, connInfo := range agent.conns {
+	for _, connInfo := range agent.conns {
 		connInfo.conn.Close()
-		delete(agent.conns, connId)
-		agent.curConnCount -= 1
 	}
 
-	agent.connChan <- true
+	agent.conns = make(map[int]*ConnInfo)
+	agent.curConnCount = 0
 }
 
 // FIFO cycle find available conn
@@ -371,7 +367,12 @@ func (agent *TcpAgent) Stop() {
 	if agent.stop != nil {
 		agent.stop()
 		agent.stop = nil
-		agent.runningStat.StopTime = time.Now()
-		agent.closeAllConn(context.Background())
 	}
+
+	if agent.listener != nil {
+		agent.listener.Close()
+	}
+
+	agent.runningStat.StopTime = time.Now()
+	agent.closeAllConn(context.Background())
 }
