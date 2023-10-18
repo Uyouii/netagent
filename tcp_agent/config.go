@@ -1,6 +1,10 @@
 package tcp_agent
 
-import "github.com/uyouii/netagent/common"
+import (
+	"crypto/tls"
+
+	"github.com/uyouii/netagent/common"
+)
 
 type TcpConfig struct {
 	Addr          string
@@ -9,6 +13,8 @@ type TcpConfig struct {
 	Mode          common.AgentMode
 	Debug         bool
 	RecvBufferLen int // if set zero, default is 32k
+	UseTls        bool
+	TlsConfig     *tls.Config
 }
 
 const (

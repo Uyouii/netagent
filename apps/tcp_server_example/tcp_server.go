@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"time"
 
@@ -45,12 +46,23 @@ func sendMsg(runningCtx context.Context, agent base.NetAgent) {
 
 func main() {
 	infof, errorf := common.GetLogFuns(context.Background())
+
+	cert, err := tls.LoadX509KeyPair("../certs_example/example.crt", "../certs_example/example.key")
+	if err != nil {
+		errorf("load cert failed, err: %v", err)
+		return
+	}
+
 	config := &tcp_agent.TcpConfig{
 		Addr:      "127.0.0.1",
 		Port:      8888,
 		ConnCount: 4,
 		Mode:      common.AGENT_MODE_SERVER,
 		Debug:     true,
+		UseTls:    true,
+		TlsConfig: &tls.Config{
+			Certificates: []tls.Certificate{cert},
+		},
 	}
 	tcpServer, err := netagent.NewTcpAgent(config, nil, nil, nil, nil)
 	if err != nil {

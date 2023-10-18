@@ -2,6 +2,7 @@ package tcp_agent
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log"
 	"net"
@@ -113,7 +114,15 @@ func (agent *TcpAgent) Start() error {
 
 	agent.runningCtx, agent.stop = context.WithCancel(context.Background())
 	if agent.mode == common.AGENT_MODE_SERVER {
-		listener, err := net.Listen("tcp", fmt.Sprintf("%v:%v", agent.conf.Addr, agent.conf.Port))
+		var listener net.Listener
+		var err error
+
+		if agent.conf.UseTls && agent.conf.TlsConfig != nil {
+			listener, err = tls.Listen("tcp", fmt.Sprintf("%v:%v", agent.conf.Addr, agent.conf.Port), agent.conf.TlsConfig)
+		} else {
+			listener, err = net.Listen("tcp", fmt.Sprintf("%v:%v", agent.conf.Addr, agent.conf.Port))
+		}
+
 		if err != nil {
 			infof("TcpAgent|Start|Listen|ERROR|err=%v", err)
 			return err
@@ -139,10 +148,21 @@ func (agent *TcpAgent) connectProcess() error {
 	ctx := context.Background()
 	infof, errorf := agent.getInfof(ctx), agent.getErrorf(ctx)
 	for {
+		DefaultLoopTime := 10
 		if agent.curConnCount < agent.maxConnCount {
-			conn, err := net.Dial("tcp", fmt.Sprintf("%s:%v", agent.conf.Addr, agent.conf.Port))
+			var conn net.Conn
+			var err error
+
+			if agent.conf.UseTls && agent.conf.TlsConfig != nil {
+				conn, err = tls.Dial("tcp", fmt.Sprintf("%s:%v", agent.conf.Addr, agent.conf.Port), agent.conf.TlsConfig)
+			} else {
+				conn, err = net.Dial("tcp", fmt.Sprintf("%s:%v", agent.conf.Addr, agent.conf.Port))
+			}
+
 			if err != nil {
-				errorf("TcpAgent|connectProcess|ERROR|Dial failed, err=%v", err)
+				errorf("TcpAgent|connectProcess|ERROR|Dial failed, err=%v, usetls: %v", err, agent.conf.UseTls)
+				// if conn failed, then wait 500ms for next connection
+				DefaultLoopTime = 500
 			} else {
 				connInfo := agent.addConn(conn)
 				infof("TcpAgent|connectProcess|Connection established with server, connid: %v, conninfo: %v", connInfo.id, getConnInfo(conn))
@@ -151,7 +171,7 @@ func (agent *TcpAgent) connectProcess() error {
 		}
 		// wait 10ms or need conn
 		select {
-		case <-time.After(time.Millisecond * 10):
+		case <-time.After(time.Millisecond * time.Duration(DefaultLoopTime)):
 		case <-agent.runningCtx.Done():
 			return nil
 		}

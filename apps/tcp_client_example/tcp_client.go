@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"io/ioutil"
 	"time"
 
 	"github.com/uyouii/netagent"
@@ -45,12 +48,27 @@ func sendMsg(runningCtx context.Context, agent base.NetAgent) {
 
 func main() {
 	infof, errorf := common.GetLogFuns(context.Background())
+
+	certData, err := ioutil.ReadFile("../certs_example/example.crt")
+	if err != nil {
+		errorf("load cert failed")
+		return
+	}
+	certPool := x509.NewCertPool()
+	certPool.AppendCertsFromPEM(certData)
+
 	config := &tcp_agent.TcpConfig{
 		Addr:      "127.0.0.1",
 		Port:      8888,
 		ConnCount: 4,
 		Mode:      common.AGENT_MODE_CLIENT,
 		Debug:     true,
+		UseTls:    true,
+		TlsConfig: &tls.Config{
+			ServerName:         "uyouii.cool",
+			InsecureSkipVerify: false,
+			RootCAs:            certPool,
+		},
 	}
 	tcpClient, err := netagent.NewTcpAgent(config, nil, nil, nil, nil)
 	if err != nil {
