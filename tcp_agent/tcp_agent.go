@@ -148,7 +148,7 @@ func (agent *TcpAgent) connectProcess() error {
 	ctx := context.Background()
 	infof, errorf := agent.getInfof(ctx), agent.getErrorf(ctx)
 	for {
-		DefaultLoopTime := 10
+		loopTime := 10
 		if agent.curConnCount < agent.maxConnCount {
 			var conn net.Conn
 			var err error
@@ -162,16 +162,16 @@ func (agent *TcpAgent) connectProcess() error {
 			if err != nil {
 				errorf("TcpAgent|connectProcess|ERROR|Dial failed, err=%v, usetls: %v", err, agent.conf.UseTls)
 				// if conn failed, then wait 500ms for next connection
-				DefaultLoopTime = 500
+				loopTime = 500
 			} else {
 				connInfo := agent.addConn(conn)
 				infof("TcpAgent|connectProcess|Connection established with server, connid: %v, conninfo: %v", connInfo.id, getConnInfo(conn))
 				go agent.receiver(ctx, connInfo)
 			}
 		}
-		// wait 10ms or need conn
+
 		select {
-		case <-time.After(time.Millisecond * time.Duration(DefaultLoopTime)):
+		case <-time.After(time.Millisecond * time.Duration(loopTime)):
 		case <-agent.runningCtx.Done():
 			return nil
 		}
