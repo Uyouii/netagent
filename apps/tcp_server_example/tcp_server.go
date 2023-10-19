@@ -12,12 +12,14 @@ import (
 	"github.com/uyouii/netagent/tcp_agent"
 )
 
-func handleMsg(runningCtx context.Context, receiveChan chan *base.RecvNetData) {
+func handleMsg(runningCtx context.Context, agent base.NetAgent) {
 	infof, _ := common.GetLogFuns(context.Background())
 	for {
 		select {
-		case netData := <-receiveChan:
+		case netData := <-agent.Receive():
 			infof("receive data from client: %v", string(netData.Data))
+			respData := fmt.Sprintf("return to client for msg: %v", string(string(netData.Data)))
+			agent.SendByConn(runningCtx, netData.ConnInfo, []byte(respData))
 		case <-runningCtx.Done():
 			infof("done")
 			return
@@ -80,7 +82,7 @@ func main() {
 
 	runningCtx, cancel := context.WithCancel(context.Background())
 
-	go handleMsg(runningCtx, tcpServer.Receive())
+	go handleMsg(runningCtx, tcpServer)
 	go sendMsg(runningCtx, tcpServer)
 
 	select {

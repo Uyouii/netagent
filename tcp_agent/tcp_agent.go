@@ -224,6 +224,14 @@ func (agent *TcpAgent) addConn(conn net.Conn) *ConnInfo {
 	return connInfo
 }
 
+func (agent *TcpAgent) getConn(connId int) (*ConnInfo, bool) {
+	agent.connMu.Lock()
+	defer agent.connMu.Unlock()
+
+	connInfo, ok := agent.conns[connId]
+	return connInfo, ok
+}
+
 func (agent *TcpAgent) delConn(connId int) bool {
 	agent.connMu.Lock()
 	defer agent.connMu.Unlock()
@@ -329,7 +337,10 @@ func (agent *TcpAgent) receiver(ctx context.Context, connInfo *ConnInfo) {
 			return
 		}
 		for _, data := range dataList {
-			agent.recvChan <- &base.RecvNetData{Data: data}
+			agent.recvChan <- &base.RecvNetData{
+				Data:     data,
+				ConnInfo: connInfo,
+			}
 			agent.runningStat.RecvMsgCount += 1
 		}
 		if len(remainBuffer) > 0 {
@@ -337,6 +348,40 @@ func (agent *TcpAgent) receiver(ctx context.Context, connInfo *ConnInfo) {
 		}
 		currentLen = len(remainBuffer)
 	}
+}
+
+func (agent *TcpAgent) SendByConn(ctx context.Context, connInfo interface{}, data []byte) error {
+	infof, errorf := agent.getInfof(ctx), agent.getErrorf(ctx)
+	if !agent.Connected() {
+		errorf("send failed, agent disconnected")
+		return common.GetError(common.ERROR_DISCONNECTED)
+	}
+
+	if connInfo == nil {
+		infof("invalid conninfo, use agent.Send")
+		return agent.Send(ctx, data)
+	}
+
+	tcpConnInfo, ok := connInfo.(*ConnInfo)
+	if !ok {
+		infof("invalid conninfo, use agent.Send")
+		return agent.Send(ctx, data)
+	}
+
+	if _, ok := agent.getConn(tcpConnInfo.id); !ok {
+		infof("invalid conninfo, use agent.Send")
+		return agent.Send(ctx, data)
+	}
+
+	sendData := agent.encoder(data)
+
+	err := agent.send(ctx, tcpConnInfo, sendData)
+	if err != nil {
+		errorf("agent send failed, err: %v, connId: %v, conninfo: %v", err, tcpConnInfo.id, getConnInfo(tcpConnInfo.conn))
+		return err
+	}
+
+	return nil
 }
 
 func (agent *TcpAgent) Send(ctx context.Context, data []byte) error {

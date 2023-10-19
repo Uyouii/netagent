@@ -17,13 +17,15 @@ type RuningStat struct {
 }
 
 type RecvNetData struct {
-	Data []byte
+	Data     []byte
+	ConnInfo interface{}
 }
 
 type NetAgent interface {
 	Start() error
 	Stop()
 	Send(ctx context.Context, data []byte) error
+	SendByConn(ctx context.Context, connInfo interface{}, data []byte) error
 	Receive() chan *RecvNetData
 	Connected() bool
 	ConnectedCnt() int
