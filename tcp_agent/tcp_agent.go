@@ -368,11 +368,6 @@ func (agent *TcpAgent) SendByConn(ctx context.Context, connInfo interface{}, dat
 		return agent.Send(ctx, data)
 	}
 
-	if _, ok := agent.getConn(tcpConnInfo.id); !ok {
-		infof("invalid conninfo, use agent.Send")
-		return agent.Send(ctx, data)
-	}
-
 	sendData := agent.encoder(data)
 
 	err := agent.send(ctx, tcpConnInfo, sendData)
