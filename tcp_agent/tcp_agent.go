@@ -295,12 +295,9 @@ func (agent *TcpAgent) getAvailableConn() *ConnInfo {
 	index := sort.Search(len(connIds), func(index int) bool {
 		return connIds[index] > agent.lastSendConnId
 	})
-	if res, ok := agent.conns[index]; ok {
-		agent.lastSendConnId = res.id
-		return res
-	}
-	agent.lastSendConnId = minId
-	return agent.conns[minId]
+	nextId := connIds[index]
+	agent.lastSendConnId = nextId
+	return agent.conns[nextId]
 }
 
 func (agent *TcpAgent) receiver(ctx context.Context, connInfo *ConnInfo) {
