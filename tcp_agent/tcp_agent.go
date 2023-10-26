@@ -79,7 +79,7 @@ func NewTcpAgent(tcpConf *TcpConfig, encoder EncoderFunc, decoder DecoderFunc,
 	}
 
 	agent := TcpAgent{
-		recvChan:       make(chan *base.RecvNetData, 64),
+		recvChan:       make(chan *base.RecvNetData, 1024),
 		maxConnCount:   tcpConf.ConnCount,
 		curConnCount:   0,
 		conf:           *tcpConf,
